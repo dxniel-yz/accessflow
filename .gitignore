@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+node_modules/
+vendor/
+.deno/
+coverage/
+dist/
+build/
+*.log
+*.tmp
+.DS_Store
+.idea/
+.vscode/

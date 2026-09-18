@@ -1,0 +1,12 @@
+{
+  "tasks": {
+    "dev": "deno run --watch --allow-net=127.0.0.1 src/main.ts",
+    "start": "deno run --allow-net=127.0.0.1 src/main.ts",
+    "test": "deno test",
+    "fmt": "deno fmt",
+    "lint": "deno lint"
+  },
+  "compilerOptions": {
+    "strict": true
+  }
+}
