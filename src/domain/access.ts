@@ -6,11 +6,20 @@ export interface CoreAccountRequest {
   workspaceIds: readonly string[];
 }
 
+export interface ProvisioningTaskTemplate {
+  /** Stable ID, unique within the application. */
+  id: string;
+  title: string;
+  description?: string;
+}
+
 export interface Application {
   id: string;
   displayName: string;
   description?: string;
   active: boolean;
+  /** Omitted or empty templates use a generic provisioning task. */
+  provisioningTasks?: readonly ProvisioningTaskTemplate[];
 }
 
 export interface AccessPackage {
@@ -29,6 +38,6 @@ export interface AccessRequest {
   defaultApplicationIds: readonly string[];
   addedApplicationIds: readonly string[];
   removedApplicationIds: readonly string[];
-  /** Explicit snapshot; V0.2 does not calculate or reconcile application access. */
+  /** Explicit snapshot; callers can calculate it with the access resolver. */
   finalApplicationIds: readonly string[];
 }
