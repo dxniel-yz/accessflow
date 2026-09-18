@@ -32,7 +32,7 @@ validate these formats at runtime.
 Completed checklist items require completion metadata. Approved or rejected
 verification records require an actor and timestamp; new requests can record
 pending verification. The explicit approval status supports a future sync gate,
-but no gate or state transitions are enforced yet. Audit metadata supports
+but V0.2 did not enforce gates or state transitions. Audit metadata supports
 nested JSON values. TypeScript constraints are compile-time checks, not input
 validation.
 
@@ -74,6 +74,48 @@ completion records or enforce task dependencies or workflow transitions.
 V0.3 does not provision accounts, integrate with external systems, synchronize
 Assets, expose new API endpoints, provide a UI or authentication, or persist
 data.
+
+## V0.4 in-memory onboarding workflow
+
+Pure services now support explicit onboarding transitions, immutable checklist
+operations, final verification, and audit event creation. Existing domain types
+are unchanged.
+
+- `transitionOnboarding` in `src/services/onboarding-workflow.ts` permits
+  `draft -> submitted -> provisioning -> ready_for_verification`, with readiness
+  requiring every required checklist item to be completed. After verification,
+  it permits `verified -> syncing`, `syncing -> complete` or `sync_failed`, and
+  `sync_failed -> syncing` for a modeled retry. Other transitions raise
+  `WorkflowError`; ordinary transitions cannot approve or reject verification.
+- `transitionChecklistItem` in `src/services/checklist-lifecycle.ts` returns a
+  new checklist. Pending tasks can start or complete; in-progress tasks can
+  complete. Optional pending or in-progress tasks can also be skipped. Completed
+  and skipped tasks are terminal. Required tasks cannot be skipped. Completion
+  records `completedBy` and `completedAt` from the action's actor and timestamp.
+- `isReadyForVerification` checks only required items. Optional pending,
+  in-progress, completed, or skipped items do not block readiness. Empty and
+  optional-only checklists are ready under this rule; callers must supply the
+  full checklist associated with the onboarding.
+- `verifyOnboarding` in `src/services/verification.ts` accepts approval or
+  rejection only in `ready_for_verification`, and checks required completion
+  again. Approval records verification and moves to `verified`; rejection
+  records verification and returns to `provisioning`. Both record `verifiedBy`,
+  `verifiedAt`, and optional notes. A rejection remains recorded through renewed
+  readiness until the next decision replaces it.
+
+Each operation accepts an `ActionContext` with a caller-supplied `eventId`,
+`actor`, and ISO 8601 `timestamp`, and returns updated state plus an `event`.
+These fields must be nonblank; timestamp format validation remains deferred. The
+shared `createAuditEvent` factory in `src/services/audit-events.ts` preserves
+caller IDs and optional JSON metadata without randomness or clock reads.
+Workflow events record old/new statuses; checklist events also identify the
+task. Callers must assign distinct event IDs for distinct actions and retain
+events themselves.
+
+This remains an in-memory business-logic layer. There is no persistence, global
+audit log, authentication, UI, background job, onboarding HTTP API, external
+account provisioning, or Atlassian synchronization. Sync statuses only model a
+future integration; transitioning to them performs no external work.
 
 ## Prerequisites
 
@@ -126,13 +168,16 @@ port. Domain tests cover representative records, access snapshots, configured
 workspace selections, JSON serialization, and compile-time type constraints.
 Service tests cover access resolution, configuration-driven checklist
 generation, deterministic IDs, invalid configuration, and input immutability.
+Workflow tests cover allowed and forbidden state transitions, checklist
+lifecycle, verification gates and decisions, audit events, and immutable
+updates.
 
 ## Project structure
 
 ```text
 src/
   domain/             Domain types and public index.ts exports
-  services/           Pure access resolver and checklist generator
+  services/           Pure access, checklist, workflow, verification, and audit logic
   demo/               Fictional application catalog
   app.ts              HTTP request handler
   main.ts             Local server entry point
