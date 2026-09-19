@@ -200,6 +200,88 @@ contract without changing the onboarding domain/workflow. There is no
 persistence, authentication, UI, or real account provisioning. Business services
 read no clock and generate no random event IDs.
 
+## V0.7 local HTTP/JSON demo API
+
+The local server now exposes an in-memory API that drives the existing
+application functions. `createApiHandler` in `src/api/router.ts` accepts an
+injected session repository, demo connector, and configuration. Tests call it
+with Request/Response objects without opening a TCP port. The default uses
+fictional demo applications and the `demo-engineering` access package.
+
+`OnboardingSessionRepository` defines `save` and `getById`.
+`InMemoryOnboardingSessionRepository` clones on save/retrieval, replaces
+snapshots with the same ID, and returns `undefined` for missing IDs. POST
+creation rejects existing IDs rather than overwriting them. Requests are
+serialized within each handler instance to avoid overlapping state updates; this
+is not distributed concurrency control. State and demo inventory disappear on
+process restart.
+
+| Method | Route                                       | Operation                        |
+| ------ | ------------------------------------------- | -------------------------------- |
+| GET    | `/health`                                   | Existing health response         |
+| POST   | `/api/onboardings`                          | Create draft; returns 201        |
+| GET    | `/api/onboardings/:id`                      | Retrieve session                 |
+| POST   | `/api/onboardings/:id/submit`               | Submit                           |
+| POST   | `/api/onboardings/:id/provisioning/start`   | Start provisioning               |
+| POST   | `/api/onboardings/:id/checklist/:itemId`    | Transition checklist item        |
+| POST   | `/api/onboardings/:id/verification/prepare` | Check readiness                  |
+| POST   | `/api/onboardings/:id/verification`         | Approve or reject                |
+| POST   | `/api/onboardings/:id/sync`                 | Synchronize local demo inventory |
+| GET    | `/api/demo/inventory`                       | Inspect copied demo records      |
+
+POST requests use JSON and require `x-event-id`, `x-actor`, and `x-timestamp`
+headers. Supply a unique event ID, a fictional actor such as `demo-user`, and an
+ISO 8601 timestamp. No clock or random generator is used. Sync derives its three
+event IDs by appending `:started`, `:completed`, and `:failed` to the supplied
+ID. Server-owned audit identities and timestamps are future work; headers
+provide no authentication. Date/email format validation is not yet implemented.
+
+Creation accepts the `CreateOnboardingInput` shape, for example:
+
+```json
+{
+  "id": "demo-onboarding-001",
+  "employee": {
+    "firstName": "Alex",
+    "lastName": "Morgan",
+    "jobTitle": "Software Engineer",
+    "department": "Engineering",
+    "manager": "demo-manager",
+    "employmentType": "salary",
+    "startDate": "2026-10-02",
+    "workLocation": "remote"
+  },
+  "coreAccountRequests": [],
+  "equipmentRequest": { "platform": "macOS", "deviceRequirements": "standard" },
+  "accessPackageId": "demo-engineering",
+  "addedApplicationIds": ["analytics"],
+  "removedApplicationIds": ["project-management"],
+  "requestedBy": "demo-user",
+  "requestDate": "2026-10-01T12:00:00Z"
+}
+```
+
+Submit, start provisioning, and prepare verification accept `{}`. Checklist
+updates accept `{"status":"completed"}` (also `in_progress` or `skipped`).
+Verification accepts `{"decision":"approved","notes":"Demo review passed"}` or
+`rejected`. Sync requires `{"personReference":"demo-person"}`. URL-encode
+onboarding and checklist IDs when placing them in route segments.
+
+Boundary validation checks JSON objects, required fields, strings, arrays, and
+enum values. Workflow rules remain in the existing services. Errors use
+`{"error":{"code":"...","message":"..."}}`: malformed/invalid requests return
+400, missing routes/sessions 404, workflow conflicts 409, and unexpected
+failures 500 without stack traces. Sync returns `{ok:true,session}` on success
+or `{ok:false,session,error}` with 500 on connector failure; either resulting
+session is saved, including failed state and audit history.
+
+The demo connector remains local and memory-only: no Atlassian or external
+integration, real account provisioning, database persistence, UI, or
+authentication is implemented. V0.7 is a local/demo API, not production ready.
+Because authentication and authorization do not exist, do not expose it as a
+production service or place it on a public network with sensitive data. The
+default binding remains `127.0.0.1:8000`.
+
 ## Prerequisites
 
 - Deno 2 installed and available on your PATH (`deno --version`).
@@ -261,6 +343,8 @@ independent session snapshots.
 
 ```text
 src/
+  api/                HTTP routing, validation, and JSON error mapping
+  infrastructure/     In-memory session repository
   connectors/         Vendor-neutral contract and memory-only demo inventory
   application/        In-memory onboarding sessions and use-case orchestration
   domain/             Domain types and public index.ts exports
