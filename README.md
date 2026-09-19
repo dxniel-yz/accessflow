@@ -282,6 +282,79 @@ Because authentication and authorization do not exist, do not expose it as a
 production service or place it on a public network with sensitive data. The
 default binding remains `127.0.0.1:8000`.
 
+## V0.8 local onboarding frontend
+
+Open **http://127.0.0.1:8000/** after `deno task dev` (reload the browser after
+editing frontend files) or `deno task start`. No installation or frontend build
+step is needed. Deno serves the HTML, CSS, and browser-native JavaScript modules
+from an exact static-file allowlist, with local read permission limited to
+`src/web`. No fonts, scripts, analytics, or assets are fetched from external
+hosts.
+
+The frontend follows the supplied Figma-inspired operations-console design
+direction: dark panels, a technical grid, restrained blue accents, compact
+labels, and visible progress. The prototype is aesthetic inspiration only; the
+AccessFlow domain and V0.7 API remain authoritative for all functionality.
+Responsive layouts, labeled native controls, keyboard focus styles, and live
+error messages support ordinary desktop/laptop use and narrower screens.
+
+The demo workflow is **Intake → Checklist → Verification → Demo Inventory
+Sync**:
+
+1. Enter fictional employee, account, package/exception, laptop, and request
+   details. The live summary shows requested values without calculating final
+   access. The demo configuration comes from the server at `/web/config.json`.
+2. Review or edit before creating anything. Confirmation calls the existing
+   create, submit, and start-provisioning endpoints. If an intermediate request
+   fails, the latest saved session remains available to continue. Onboarding
+   references and request timestamps are generated once per draft from the
+   browser clock, retained through review/edit, and shown as read-only review
+   metadata. Intake requires no interaction with these fields. Friendly labels
+   (including Workspace A/B) preserve the internal API values. Manual access
+   without a package hides and clears removal selections; package defaults and
+   exceptions remain resolved by the backend.
+3. Work through the actual API-generated checklist, using category filters and
+   required-task progress. Readiness still requires backend acceptance. The UI
+   maps `draft` to Intake, `submitted/provisioning` to Checklist,
+   `ready_for_verification` to Verification, and verified/sync/final statuses to
+   Inventory Sync. Step indicators cannot bypass workflow rules.
+4. Approve or reject with optional notes. Rejection returns to the checklist
+   with the backend's recorded decision. Completed tasks cannot be reopened in
+   this version; the existing backend lifecycle is unchanged.
+5. Inspect the manifest based on backend final access and enter a stable
+   fictional person reference, such as `demo-person-alex-morgan`, separate from
+   onboarding ID. Commit to the local Demo Identity Inventory. Success shows
+   completion and audit events; a failed sync retains the returned failed
+   session and displays the safe API error. Connector retries from failed state
+   remain unsupported.
+6. Start New Onboarding resets only the frontend draft/current selection.
+   Existing server records are not deleted.
+
+`src/web/api-client.js` centralizes fetch, typed with checked JSDoc imports from
+the TypeScript models. `state.js` contains checked, testable presentation
+helpers. `app.js` renders the views; it does not recreate access resolution or
+enforce business transitions. User-provided values are escaped before HTML
+rendering. The client uses the browser clock plus a per-client sequence for demo
+event IDs and timestamps; its transport/clock can be injected for deterministic
+tests. Creation uses the manually entered requester; later actions use
+`demo-user`. Neither identity is authenticated. Production identity/event
+generation is future work, not a capability of this demo.
+
+Only the active onboarding ID is kept in browser local storage. Refresh reloads
+the session from the API; form drafts and full sessions are not persisted in the
+browser. If the server restarts and the record disappears, the UI clears the
+stale selection and explains that a new request is needed. State and inventory
+remain in-memory only, with no database, authentication, authorization,
+external/Atlassian integration, or real account provisioning. This is a local
+portfolio demo, not a production deployment; keep it off public networks and use
+fictional data only.
+
+Focused tests cover static routing, existing API/health behavior, API error
+parsing, workflow step mapping, checklist progress, intake transformation, and
+sync preview. They use direct Request/Response calls and injected static
+readers, so `deno test` needs no filesystem or network permissions. The actual
+assets are also checked by manually running the server and opening the frontend.
+
 ## Prerequisites
 
 - Deno 2 installed and available on your PATH (`deno --version`).
@@ -343,6 +416,7 @@ independent session snapshots.
 
 ```text
 src/
+  web/                Native frontend modules, styles, HTML, and static router
   api/                HTTP routing, validation, and JSON error mapping
   infrastructure/     In-memory session repository
   connectors/         Vendor-neutral contract and memory-only demo inventory
@@ -353,6 +427,7 @@ src/
   app.ts              HTTP request handler
   main.ts             Local server entry point
 tests/
+  web/                Static router, API-client, and presentation tests
   application/        Orchestration flow tests and fictional fixtures
   domain/             Domain model tests
   services/           Business logic tests and test helpers
