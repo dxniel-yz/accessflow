@@ -156,6 +156,50 @@ is still no persistence, authentication, UI, onboarding HTTP API, Atlassian
 integration, background processing, or real account provisioning. Fictional
 application-layer fixtures live in `tests/application/fixtures.ts`.
 
+## V0.6 identity inventory connector boundary
+
+`IdentityInventoryConnector` in `src/connectors/identity-inventory-connector.ts`
+defines asynchronous `upsertPerson`, `setManager`, and `syncApplicationAccess`
+operations using vendor-neutral types. `InventoryPerson` contains inventory
+profile fields and requested core accounts. `InventorySyncSnapshot` adds the
+manager reference and final application IDs; it excludes personal email,
+checklists, audit history, and verification internals.
+
+`prepareInventorySync(session, personReference)` creates a detached, deeply
+frozen snapshot. The caller supplies a stable person reference, independent of
+onboarding request IDs, and must reuse it for the same person. Preparation and
+execution require exactly `verified` onboarding status and approved
+verification. All other statuses, including `sync_failed`, are rejected before
+connector calls. V0.6 does not execute connector retries from failed sessions.
+
+`synchronizeInventory(session, personReference, connector, contexts)` is
+exported from `src/application/index.ts`. Callers supply `started`, `completed`,
+and `failed` action contexts, with distinct event IDs unused in session history.
+All contexts are validated before connector calls. The operation reuses
+`startSync`, then calls person upsert, manager linking, and desired application
+access synchronization in order. It reuses `completeSync` on success or
+`failSync` on connector failure:
+
+- Success returns `{ ok: true, session }` with status `complete`.
+- Connector failure returns `{ ok: false, session, error }` with status
+  `sync_failed`, the original thrown value, and both start/failure audit events.
+- Invalid preconditions throw before connector operations. Earlier connector
+  writes may remain if a later operation fails; no transaction or rollback is
+  implied.
+
+`DemoIdentityInventoryConnector` stores records in memory keyed by the stable
+person reference. Repeated upserts update one record; application
+synchronization replaces desired access with unique IDs, including clearing
+access with an empty array. `getRecords()` returns independent copies for
+inspection. Manager references are recorded directly; future implementations can
+resolve them in their own inventory. Use fictional records only with this demo.
+
+The demo connector performs no network requests and does not connect to
+Atlassian or any external system. A future connector can implement the same
+contract without changing the onboarding domain/workflow. There is no
+persistence, authentication, UI, or real account provisioning. Business services
+read no clock and generate no random event IDs.
+
 ## Prerequisites
 
 - Deno 2 installed and available on your PATH (`deno --version`).
@@ -217,6 +261,7 @@ independent session snapshots.
 
 ```text
 src/
+  connectors/         Vendor-neutral contract and memory-only demo inventory
   application/        In-memory onboarding sessions and use-case orchestration
   domain/             Domain types and public index.ts exports
   services/           Pure access, checklist, workflow, verification, and audit logic
