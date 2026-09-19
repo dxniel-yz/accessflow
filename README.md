@@ -117,6 +117,45 @@ audit log, authentication, UI, background job, onboarding HTTP API, external
 account provisioning, or Atlassian synchronization. Sync statuses only model a
 future integration; transitioning to them performs no external work.
 
+## V0.5 application/use-case orchestration
+
+`src/application/index.ts` exports an in-memory `OnboardingSession`: an
+`onboarding` request, its `checklist`, and ordered `auditEvents`. Operations
+return new independent snapshots, leaving prior sessions and caller
+configuration unchanged.
+
+`createOnboarding(input, configuration, context)` selects the optional
+`input.accessPackageId` from `configuration.accessPackages`. Missing or
+ambiguous selected packages fail explicitly. Without a selection, defaults are
+empty. The operation reuses access resolution to snapshot defaults, additions,
+removals, and final access; creates a draft request with pending verification;
+generates the checklist from `configuration.applications`; and starts history
+with `onboarding_created`. Input supplies employee, core accounts, equipment,
+request identity/date, manual access exceptions, and optional notes.
+
+The remaining use cases compose existing services and append their audit events:
+
+- `submitOnboarding(session, context)` and
+  `startProvisioning(session, context)`.
+- `updateChecklistItem(session, itemId, target, context)` for existing checklist
+  lifecycle transitions.
+- `prepareForVerification(session, context)` using the required-item readiness
+  gate, and `verifyOnboarding(session, decision, context, notes?)` for approval
+  or rejection.
+- `startSync`, `completeSync`, `failSync`, and `retrySync`, each taking a
+  session and context. Initial sync and retry are distinct operations.
+
+All operations accept caller-controlled audit IDs, actors, and timestamps. Audit
+history preserves insertion order without sorting timestamps. Callers remain
+responsible for distinct event IDs. The application layer imports the existing
+access resolver, checklist generator/lifecycle, workflow transition,
+verification, and audit services rather than duplicating their rules.
+
+Sync operations are **state only** and perform no external network calls. There
+is still no persistence, authentication, UI, onboarding HTTP API, Atlassian
+integration, background processing, or real account provisioning. Fictional
+application-layer fixtures live in `tests/application/fixtures.ts`.
+
 ## Prerequisites
 
 - Deno 2 installed and available on your PATH (`deno --version`).
@@ -170,18 +209,22 @@ Service tests cover access resolution, configuration-driven checklist
 generation, deterministic IDs, invalid configuration, and input immutability.
 Workflow tests cover allowed and forbidden state transitions, checklist
 lifecycle, verification gates and decisions, audit events, and immutable
-updates.
+updates. Application tests exercise complete onboarding flows,
+rejection/reapproval, sync failure/retry, preserved business rules, and
+independent session snapshots.
 
 ## Project structure
 
 ```text
 src/
+  application/        In-memory onboarding sessions and use-case orchestration
   domain/             Domain types and public index.ts exports
   services/           Pure access, checklist, workflow, verification, and audit logic
   demo/               Fictional application catalog
   app.ts              HTTP request handler
   main.ts             Local server entry point
 tests/
+  application/        Orchestration flow tests and fictional fixtures
   domain/             Domain model tests
   services/           Business logic tests and test helpers
   health_test.ts      Health endpoint test
